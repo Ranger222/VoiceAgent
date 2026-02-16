@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Voice Companion</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg: #0a0a0f;
+            --surface: #13131a;
+            --surface2: #1c1c28;
+            --border: #2a2a3a;
+            --text: #e8e8f0;
+            --text2: #8888a0;
+            --accent: #6c5ce7;
+            --accent2: #a29bfe;
+            --green: #00b894;
+            --red: #ff6b6b;
+            --orange: #fdcb6e;
+            --blue: #74b9ff;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* ── Header ── */
+        .header {
+            width: 100%;
+            padding: 20px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface);
+        }
+
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            background: linear-gradient(135deg, var(--accent2), var(--blue));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-badge {
+            font-size: 12px;
+            padding: 4px 12px;
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            color: var(--text2);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status-badge .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text2);
+        }
+
+        .status-badge.connected .dot {
+            background: var(--green);
+        }
+
+        .status-badge.listening .dot {
+            background: var(--green);
+            animation: pulse 1.5s infinite;
+        }
+
+        .status-badge.error .dot {
+            background: var(--red);
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+
+            50% {
+                opacity: 0.4;
+                transform: scale(1.4);
+            }
+        }
+
+        /* ── Main layout ── */
+        .main {
+            flex: 1;
+            width: 100%;
+            max-width: 900px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* ── Latency Panel ── */
+        .latency-panel {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+        }
+
+        .metric-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+        }
+
+        .metric-card .label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text2);
+            margin-bottom: 8px;
+        }
+
+        .metric-card .value {
+            font-size: 28px;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .metric-card .unit {
+            font-size: 14px;
+            font-weight: 400;
+            color: var(--text2);
+        }
+
+        .metric-card.stt .value {
+            color: var(--blue);
+        }
+
+        .metric-card.llm .value {
+            color: var(--accent2);
+        }
+
+        .metric-card.tts .value {
+            color: var(--orange);
+        }
+
+        .metric-card.total .value {
+            color: var(--green);
+        }
+
+        /* ── Conversation ── */
+        .conversation {
+            flex: 1;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow-y: auto;
+            padding: 20px;
+            max-height: 400px;
+            min-height: 250px;
+        }
+
+        .msg {
+            margin-bottom: 16px;
+            display: flex;
+            flex-direction: column;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .msg .role {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+            font-weight: 600;
+        }
+
+        .msg.user .role {
+            color: var(--blue);
+        }
+
+        .msg.ai .role {
+            color: var(--accent2);
+        }
+
+        .msg .bubble {
+            padding: 12px 16px;
+            border-radius: 12px;
+            font-size: 15px;
+            line-height: 1.5;
+            max-width: 80%;
+        }
+
+        .msg.user .bubble {
+            background: var(--surface2);
+            align-self: flex-end;
+        }
+
+        .msg.ai .bubble {
+            background: linear-gradient(135deg, rgba(108, 92, 231, 0.15), rgba(162, 155, 254, 0.08));
+            border: 1px solid rgba(108, 92, 231, 0.2);
+        }
+
+        .msg .latency-tag {
+            font-size: 11px;
+            color: var(--text2);
+            margin-top: 4px;
+        }
+
+        /* live transcript */
+        .interim {
+            padding: 10px 16px;
+            color: var(--text2);
+            font-style: italic;
+            font-size: 14px;
+            border-left: 2px solid var(--accent);
+            min-height: 24px;
+        }
+
+        /* ── Orb Button ── */
+        .controls {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 0 0;
+        }
+
+        .orb-container {
+            position: relative;
+            width: 100px;
+            height: 100px;
+        }
+
+        .orb {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            background: linear-gradient(135deg, var(--accent), var(--blue));
+            box-shadow: 0 0 30px rgba(108, 92, 231, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            position: relative;
+            z-index: 2;
+        }
+
+        .orb:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 50px rgba(108, 92, 231, 0.5);
+        }
+
+        .orb.active {
+            background: linear-gradient(135deg, var(--green), #55efc4);
+            box-shadow: 0 0 40px rgba(0, 184, 148, 0.4);
+            animation: orbPulse 2s infinite;
+        }
+
+        @keyframes orbPulse {
+
+            0%,
+            100% {
+                box-shadow: 0 0 40px rgba(0, 184, 148, 0.3);
+            }
+
+            50% {
+                box-shadow: 0 0 60px rgba(0, 184, 148, 0.6);
+            }
+        }
+
+        .orb svg {
+            width: 36px;
+            height: 36px;
+            fill: white;
+        }
+
+        .orb-ring {
+            position: absolute;
+            top: -8px;
+            left: -8px;
+            width: 116px;
+            height: 116px;
+            border-radius: 50%;
+            border: 2px solid transparent;
+            z-index: 1;
+        }
+
+        .orb.active+.orb-ring {
+            border-color: var(--green);
+            animation: ringPulse 2s infinite;
+        }
+
+        @keyframes ringPulse {
+
+            0%,
+            100% {
+                transform: scale(1);
+                opacity: 0.5;
+            }
+
+            50% {
+                transform: scale(1.1);
+                opacity: 0;
+            }
+        }
+
+        .orb-label {
+            font-size: 13px;
+            color: var(--text2);
+        }
+
+        /* ── Visualizer ── */
+        .visualizer {
+            height: 50px;
+            width: 100%;
+            max-width: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+        }
+
+        .vis-bar {
+            width: 4px;
+            background: var(--accent);
+            border-radius: 4px;
+            transition: height 0.1s ease;
+            height: 4px;
+        }
+
+        .vis-bar.active {
+            animation: visAnim 0.5s ease infinite;
+        }
+
+        @keyframes visAnim {
+
+            0%,
+            100% {
+                height: 4px;
+            }
+
+            50% {
+                height: 40px;
+            }
+        }
+
+        /* ── Toast / errors ── */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            padding: 10px 20px;
+            border-radius: 12px;
+            font-size: 13px;
+            color: var(--text);
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 100;
+        }
+
+        .toast.show {
+            opacity: 1;
+        }
+
+        @media (max-width: 600px) {
+            .latency-panel {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .msg .bubble {
+                max-width: 95%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>AI Voice Companion</h1>
+        <div class="status-badge" id="statusBadge">
+            <span class="dot"></span>
+            <span id="statusText">Disconnected</span>
+        </div>
+    </div>
+
+    <div class="main">
+        <!-- Latency Metrics -->
+        <div class="latency-panel">
+            <div class="metric-card stt">
+                <div class="label">STT Latency</div>
+                <div class="value" id="sttLatency">—<span class="unit">ms</span></div>
+            </div>
+            <div class="metric-card llm">
+                <div class="label">LLM First Token</div>
+                <div class="value" id="llmLatency">—<span class="unit">ms</span></div>
+            </div>
+            <div class="metric-card tts">
+                <div class="label">TTS First Byte</div>
+                <div class="value" id="ttsLatency">—<span class="unit">ms</span></div>
+            </div>
+            <div class="metric-card total">
+                <div class="label">Total Response</div>
+                <div class="value" id="totalLatency">—<span class="unit">ms</span></div>
+            </div>
+        </div>
+
+        <!-- Conversation -->
+        <div class="conversation" id="conversation">
+            <div class="msg ai">
+                <span class="role">AI Companion</span>
+                <div class="bubble">Hey there! Tap the orb and start talking. I'm listening. 🎙️</div>
+            </div>
+        </div>
+
+        <!-- Live interim transcript -->
+        <div class="interim" id="interim"></div>
+
+        <!-- Orb + Visualizer -->
+        <div class="controls">
+            <div class="visualizer" id="visualizer"></div>
+            <div class="orb-container">
+                <button class="orb" id="orbBtn" onclick="toggleListening()">
+                    <svg viewBox="0 0 24 24">
+                        <path
+                            d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
+                    </svg>
+                </button>
+                <div class="orb-ring"></div>
+            </div>
+            <div class="orb-label" id="orbLabel">Tap to start</div>
+
+            <!-- Text Input Fallback -->
+            <div
+                style="margin-top: 24px; display: flex; gap: 8px; width: 100%; max-width: 400px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 4px;">
+                <input type="text" id="textInput" placeholder="Type a message to test pipeline..."
+                    style="flex: 1; background: transparent; border: none; padding: 10px; color: var(--text); font-size: 14px; outline: none;">
+                <button onclick="sendText()"
+                    style="background: var(--accent); border: none; border-radius: 8px; padding: 0 16px; color: white; cursor: pointer; font-size: 14px; font-weight: 500; transition: background 0.2s;">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // ── State ──
+        let ws = null;
+        let audioCtx = null;
+        let playbackCtx = null;  // Separate context for TTS playback
+        let mediaStream = null;
+        let scriptProcessor = null;
+        let isListening = false;
+        let audioQueue = [];
+        let isPlayingAudio = false;
+        let currentAIBubble = null;
+        let speechStartTime = null;
+        let reconnectDelay = 2000;
+        let reconnectTimer = null;
+        let intentionalClose = false;
+        let micInitialized = false;
+        let isInitializingMic = false;
+        let ttsSampleRate = 22050;  // Will be updated from server
+
+        // ── Visualizer setup ──
+        const visContainer = document.getElementById('visualizer');
+        for (let i = 0; i < 32; i++) {
+            const bar = document.createElement('div');
+            bar.className = 'vis-bar';
+            visContainer.appendChild(bar);
+        }
+        const visBars = visContainer.querySelectorAll('.vis-bar');
+
+        // ── Toast ──
+        function showToast(msg, duration = 3000) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), duration);
+        }
+
+        // ── Status ──
+        function setStatus(state, text) {
+            const badge = document.getElementById('statusBadge');
+            const label = document.getElementById('statusText');
+            badge.className = 'status-badge ' + state;
+            label.textContent = text;
+        }
+
+        // ── WebSocket connection ──
+        function connectWS() {
+            if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+            intentionalClose = false;
+
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${location.host}/ws`);
+            ws.binaryType = 'arraybuffer';
+
+            ws.onopen = async () => {
+                setStatus('connected', 'Connected');
+                showToast('Connected to server (Local STT + TTS)');
+                reconnectDelay = 2000; // reset backoff
+                // Fetch TTS sample rate from server
+                try {
+                    const resp = await fetch('/tts_sample_rate');
+                    const data = await resp.json();
+                    ttsSampleRate = data.sample_rate || 22050;
+                    console.log('TTS sample rate:', ttsSampleRate);
+                } catch (e) { console.warn('Could not fetch TTS sample rate, using default'); }
+            };
+
+            ws.onclose = () => {
+                setStatus('', 'Disconnected');
+                if (!intentionalClose) {
+                    showToast(`Reconnecting in ${reconnectDelay / 1000}s…`);
+                    reconnectTimer = setTimeout(() => {
+                        connectWS();
+                        reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+                    }, reconnectDelay);
+                }
+            };
+
+            ws.onerror = (e) => {
+                console.error('WS error', e);
+                setStatus('error', 'Error');
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+
+                switch (data.type) {
+                    case 'status':
+                        showToast(data.message);
+                        break;
+
+                    case 'transcript':
+                        handleTranscript(data);
+                        break;
+
+                    case 'processing':
+                        document.getElementById('interim').textContent = 'AI is thinking…';
+                        // Mark previous AI bubble as done so next tokens create a new one
+                        if (currentAIBubble) { currentAIBubble.dataset.done = '1'; currentAIBubble = null; }
+                        break;
+
+                    case 'llm_token':
+                        appendAIToken(data.token);
+                        break;
+
+                    case 'sentence':
+                        break;
+
+                    case 'audio':
+                        queueAudio(data.data);
+                        break;
+
+                    case 'done':
+                        document.getElementById('interim').textContent = '';
+                        if (currentAIBubble) { currentAIBubble.dataset.done = '1'; currentAIBubble = null; }
+                        break;
+
+                    case 'metric':
+                        updateMetric(data.name, data.value);
+                        break;
+
+                    case 'error':
+                        showToast('Error: ' + data.message, 5000);
+                        document.getElementById('interim').textContent = '';
+                        break;
+                }
+            };
+        }
+
+        // ── Transcript handling ──
+        function handleTranscript(data) {
+            const interim = document.getElementById('interim');
+            if (!data.speech_final) {
+                interim.textContent = data.text;
+            } else {
+                interim.textContent = '';
+                addMessage('user', data.text);
+                // Measure STT latency from when we detected speech start
+                if (speechStartTime) {
+                    const sttLat = Date.now() - speechStartTime;
+                    updateMetric('stt_latency_ms', sttLat);
+                    speechStartTime = null;
+                }
+            }
+        }
+
+        // ── Message display ──
+        function addMessage(role, text) {
+            const conv = document.getElementById('conversation');
+            const msg = document.createElement('div');
+            msg.className = `msg ${role}`;
+            msg.innerHTML = `
+            <span class="role">${role === 'user' ? 'You' : 'AI Companion'}</span>
+            <div class="bubble">${escapeHtml(text)}</div>
+        `;
+            conv.appendChild(msg);
+            conv.scrollTop = conv.scrollHeight;
+
+            if (role === 'ai') {
+                currentAIBubble = msg.querySelector('.bubble');
+            }
+
+            return msg;
+        }
+
+        function appendAIToken(token) {
+            if (!currentAIBubble || currentAIBubble.dataset.done === '1') {
+                const msg = addMessage('ai', '');
+                currentAIBubble = msg.querySelector('.bubble');
+            }
+            currentAIBubble.textContent += token;
+            const conv = document.getElementById('conversation');
+            conv.scrollTop = conv.scrollHeight;
+        }
+
+        function escapeHtml(text) {
+            const d = document.createElement('div');
+            d.textContent = text;
+            return d.innerHTML;
+        }
+
+        // ── Metric display ──
+        function updateMetric(name, value) {
+            const map = {
+                stt_latency_ms: 'sttLatency',
+                llm_latency_ms: 'llmLatency',
+                tts_latency_ms: 'ttsLatency',
+                total_response_ms: 'totalLatency',
+            };
+            const el = document.getElementById(map[name]);
+            if (el) {
+                el.innerHTML = `${value}<span class="unit">ms</span>`;
+            }
+        }
+
+        // ── Audio Playback ──
+        function queueAudio(base64Data) {
+            const raw = atob(base64Data);
+            const bytes = new Uint8Array(raw.length);
+            for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+
+            // Convert PCM s16le to Float32 for Web Audio API
+            const samples = new Int16Array(bytes.buffer);
+            const floats = new Float32Array(samples.length);
+            for (let i = 0; i < samples.length; i++) {
+                floats[i] = samples[i] / 32768.0;
+            }
+
+            audioQueue.push(floats);
+            if (!isPlayingAudio) playNextAudio();
+        }
+
+        function playNextAudio() {
+            if (audioQueue.length === 0) {
+                isPlayingAudio = false;
+                return;
+            }
+            isPlayingAudio = true;
+
+            if (!playbackCtx) playbackCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: ttsSampleRate });
+
+            const floats = audioQueue.shift();
+            const buffer = playbackCtx.createBuffer(1, floats.length, ttsSampleRate);
+            buffer.getChannelData(0).set(floats);
+
+            const source = playbackCtx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(playbackCtx.destination);
+            source.onended = () => playNextAudio();
+            source.start();
+        }
+
+        // ── Microphone ──
+        async function initMicrophone() {
+            if (micInitialized) return true;
+            if (isInitializingMic) return false;
+
+            isInitializingMic = true;
+            console.log('Initializing microphone...');
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        sampleRate: 16000,
+                        channelCount: 1,
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    }
+                });
+
+                const source = audioCtx.createMediaStreamSource(mediaStream);
+                scriptProcessor = audioCtx.createScriptProcessor(4096, 1, 1);
+
+                let chunkCount = 0;
+                scriptProcessor.onaudioprocess = (e) => {
+                    if (!isListening || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+                    const input = e.inputBuffer.getChannelData(0);
+                    const pcm = new Int16Array(input.length);
+                    for (let i = 0; i < input.length; i++) {
+                        let s = Math.max(-1, Math.min(1, input[i]));
+                        pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                    }
+
+                    let rms = 0;
+                    for (let i = 0; i < input.length; i++) rms += input[i] * input[i];
+                    rms = Math.sqrt(rms / input.length);
+
+                    if (rms > 0.01 && !speechStartTime) {
+                        speechStartTime = Date.now();
+                    }
+
+                    updateVisualizer(input);
+
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(pcm.buffer);
+                        chunkCount++;
+                    }
+                };
+
+                source.connect(scriptProcessor);
+                scriptProcessor.connect(audioCtx.destination);
+
+                micInitialized = true;
+                isInitializingMic = false;
+                console.log('Microphone initialized successfully');
+                return true;
+            } catch (err) {
+                isInitializingMic = false;
+                console.error('Mic init failed:', err);
+                showToast('Microphone access denied.', 5000);
+                return false;
+            }
+        }
+
+        function stopMicrophone() {
+            // We keep it initialized but just stop sending
+            isListening = false;
+        }
+
+        // ── Visualizer update ──
+        function updateVisualizer(samples) {
+            const step = Math.floor(samples.length / visBars.length);
+            for (let i = 0; i < visBars.length; i++) {
+                let sum = 0;
+                for (let j = 0; j < step; j++) {
+                    sum += Math.abs(samples[i * step + j] || 0);
+                }
+                const avg = sum / step;
+                const h = Math.max(4, Math.min(45, avg * 500));
+                visBars[i].style.height = h + 'px';
+                visBars[i].style.background = `hsl(${250 + avg * 2000}, 70%, ${50 + avg * 200}%)`;
+            }
+        }
+
+        // ── Toggle ──
+        async function toggleListening() {
+            const orb = document.getElementById('orbBtn');
+            const label = document.getElementById('orbLabel');
+
+            if (!isListening) {
+                label.textContent = 'Initializing mic...';
+                const ready = await initMicrophone();
+                if (!ready) {
+                    label.textContent = 'Mic failed';
+                    return;
+                }
+
+                isListening = true;
+                orb.classList.add('active');
+                label.textContent = 'Listening…';
+                setStatus('listening', 'Listening');
+
+                if (audioCtx && audioCtx.state === 'suspended') {
+                    await audioCtx.resume();
+                }
+            } else {
+                isListening = false;
+                orb.classList.remove('active');
+                label.textContent = 'Tap to start';
+                setStatus('connected', 'Connected');
+                visBars.forEach(b => b.style.height = '4px');
+            }
+        }
+
+        // ── Text input ──
+        function sendText() {
+            const input = document.getElementById('textInput');
+            const text = input.value.trim();
+            if (!text || !ws || ws.readyState !== WebSocket.OPEN) {
+                if (!text) return;
+                showToast('WebSocket not connected');
+                return;
+            }
+
+            console.log('Sending text input:', text);
+            addMessage('user', text);
+            ws.send(JSON.stringify({ type: 'text_input', text: text }));
+            input.value = '';
+            document.getElementById('interim').textContent = 'AI is thinking…';
+        }
+
+        // Add Enter key listener
+        document.getElementById('textInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendText();
+        });
+
+        // ── Init ──
+        console.log('App initialized. Waiting for WebSocket...');
+        connectWS();
+    </script>
+</body>
+
+</html>
