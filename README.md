@@ -1,261 +1,197 @@
-# AI Voice Companion Orchestrator
+# Voice Agent
 
-A production-ready, low-latency AI voice companion with cascaded streaming architecture.
+A low-latency, real-time AI voice companion built with a cascaded streaming architecture. This system uses local speech processing (faster-whisper for STT and Piper for TTS) combined with Mistral LLM for natural, conversational voice interactions.
 
-## 🎯 Features
-
-- **Real-time Speech-to-Text**: Deepgram Nova-3 with 400ms VAD threshold
-- **Streaming LLM**: Mistral Small with sentence-level chunking
-- **Cascaded Streaming**: TTS starts before LLM completes (< 1s latency)
-- **Barge-in Support**: Interrupt AI mid-response naturally
-- **Rate Limit Handling**: Automatic retry with exponential backoff
-- **Conversational AI**: Warm, empathetic persona optimized for voice
-
-## 🏗️ Architecture
+## Architecture
 
 ```
-User Speech → Deepgram STT → Mistral LLM → Cartesia TTS → Audio Output
-                    ↓              ↓              ↓
-                WebSocket    Sentence Chunker   WebSocket
-                    ↓              ↓              ↓
-                 400ms VAD    Cascaded Stream  Interrupt Support
+User Speech --> faster-whisper STT --> Mistral LLM --> Piper TTS --> Audio Output
+                     |                      |               |
+                Local Inference      Sentence Chunker   Local ONNX
+                     |                      |               |
+                300ms VAD           Cascaded Stream    22050 Hz PCM
 ```
 
-### Cascaded Streaming Flow
+### How It Works
 
-The key innovation is **sentence-level streaming**:
+1. The browser captures microphone audio and streams it via WebSocket to the server
+2. faster-whisper (local) transcribes speech using energy-based VAD with a 300ms silence threshold
+3. Mistral LLM streams a response token-by-token
+4. A micro-chunker detects natural speech boundaries and sends each phrase to TTS immediately
+5. Piper TTS (local) synthesizes each chunk and streams audio back to the browser
+6. The user hears the first words within approximately 1 second of finishing their sentence
 
-1. User stops speaking (VAD triggers after 400ms)
-2. Deepgram sends transcript to Mistral
-3. Mistral streams tokens → Chunker detects sentence boundaries
-4. **Each sentence sent to TTS immediately** (don't wait for full response)
-5. Audio playback begins while LLM is still generating
-6. Total latency: **< 1 second** from speech end to audio start
+### Cascaded Streaming
 
-### Barge-in Logic
+The key design principle is that TTS does not wait for the full LLM response. Each sentence or phrase is synthesized and played as soon as it is generated. This means the user hears audio while the LLM is still producing the rest of the response.
 
-Users can interrupt naturally:
+### Turn-Taking Design
 
-1. Deepgram detects new speech during TTS playback
-2. Interrupt event triggered → TTS stream killed immediately
-3. Audio buffer cleared, new transcript processed
-4. Response time: **< 100ms**
+The system prompt follows a voice-native conversation pattern rather than a chatbot pattern. The AI acknowledges the user, responds briefly with the key information, and returns the conversational turn with a follow-up question. This creates a natural back-and-forth rhythm.
 
-## 📦 Installation
+## Prerequisites
 
-### 1. Clone and Setup
+- Python 3.10 or later
+- macOS (tested on Apple M2 Air, 16 GB RAM) or Linux
+- A Mistral API key
+- A modern web browser with microphone access
+
+## Installation
+
+### 1. Clone the Repository
 
 ```bash
-cd "/Users/piyushsinghtomar/Documents/Voice Agent"
+git clone https://github.com/Ranger222/VoiceAgent.git
+cd VoiceAgent
+```
 
-# Create virtual environment
+### 2. Create a Virtual Environment
+
+```bash
 python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate
+```
 
-# Install dependencies
+### 3. Install Dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
-### 2. Configure API Keys
-
-Copy the example environment file and add your API keys:
+### 4. Configure Environment Variables
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` and add your keys:
+Edit the `.env` file and add your Mistral API key:
 
-```bash
-DEEPGRAM_API_KEY=your_deepgram_key_here
+```
 MISTRAL_API_KEY=your_mistral_key_here
-CARTESIA_API_KEY=your_cartesia_key_here
 ```
 
-**Get API Keys:**
-- **Deepgram**: https://console.deepgram.com/ (Free tier: 45,000 minutes)
-- **Mistral**: https://console.mistral.ai/ (Free tier available)
-- **Cartesia**: https://cartesia.ai/ (Free tier available)
+The STT and TTS models are fully local and require no API keys. They will be downloaded automatically on first run.
 
-## 🚀 Usage
+## Usage
 
-### Quick Test - Mistral LLM Only
+### Start the Server
 
-Test the Mistral LLM streaming integration:
+```bash
+python server.py
+```
+
+On first launch, the server will:
+- Download and cache the faster-whisper `base.en` model (approximately 150 MB)
+- Download and cache the Piper `en_US-amy-medium` voice model (approximately 50 MB)
+- Start the FastAPI server on `http://localhost:8000`
+
+### Open the Web Interface
+
+Navigate to `http://localhost:8000` in your browser. Click the orb to start speaking.
+
+### Test the LLM Integration
 
 ```bash
 python test_mistral.py
 ```
 
-This will send a test message to Mistral and show the streaming response with sentence chunking.
+This sends a test message to Mistral and displays the streaming response with sentence chunking.
 
-### Run the Full Orchestrator
+## Configuration
 
-```bash
-python -m orchestrator.main
-```
-
-**What happens:**
-1. Microphone captures your speech (via PyAudio)
-2. Deepgram transcribes in real-time
-3. Mistral generates streaming response
-4. Cartesia synthesizes and plays audio
-5. You can interrupt mid-response (barge-in)
-
-### Test Mode (Text-only TTS)
-
-For testing without audio playback:
-
-```bash
-python -m orchestrator.main --fallback-tts
-```
-
-This logs TTS output to console instead of playing audio.
-
-## 🎛️ Configuration
-
-All settings are in `.env`:
+All settings are configured through the `.env` file:
 
 | Variable | Default | Description |
-|----------|---------|-------------|
-| `VAD_THRESHOLD_MS` | 400 | Voice activity detection threshold |
-| `MISTRAL_TEMPERATURE` | 0.7 | LLM creativity (0.0-1.0) |
-| `MISTRAL_MAX_TOKENS` | 150 | Max response length |
-| `MIN_CHUNK_LENGTH` | 10 | Minimum sentence chunk size |
-| `MAX_CHUNK_LENGTH` | 200 | Maximum chunk before force split |
+|---|---|---|
+| `MISTRAL_API_KEY` | (required) | Your Mistral API key |
+| `MISTRAL_MODEL` | `mistral-small-latest` | Mistral model to use |
+| `WHISPER_MODEL` | `base.en` | faster-whisper model size (`tiny.en`, `base.en`, `small.en`) |
+| `PIPER_VOICE` | `en_US-amy-medium` | Piper voice model name |
+| `VAD_THRESHOLD_MS` | `300` | Silence duration (ms) before triggering transcription |
+| `MIN_CHUNK_LENGTH` | `10` | Minimum text chunk size for TTS |
+| `MAX_CHUNK_LENGTH` | `200` | Maximum chunk size before force-splitting |
 
-## 🧪 Testing
-
-### Test Sentence Chunker
-
-```bash
-python -c "
-from orchestrator.components.chunker import chunk_text_sync
-text = 'Hello, how are you? I am doing great. Thanks for asking!'
-chunks = chunk_text_sync(text)
-print(chunks)
-"
-```
-
-Expected output:
-```python
-['Hello,', 'how are you?', 'I am doing great.', 'Thanks for asking!']
-```
-
-### Test Latency
-
-1. Run the orchestrator
-2. Say: "Hello, how are you?"
-3. Measure time from when you stop speaking to when audio starts
-4. **Target**: < 1 second
-
-### Test Barge-in
-
-1. Ask a question that triggers a long response
-2. While AI is speaking, say "wait" or "stop"
-3. Audio should stop within 100ms
-
-## 📁 Project Structure
+## Project Structure
 
 ```
-voice-agent/
-├── orchestrator/
-│   ├── __init__.py
-│   ├── main.py              # Main orchestration loop
-│   ├── config.py            # Configuration management
-│   └── components/
-│       ├── __init__.py
-│       ├── deepgram_stt.py  # Deepgram WebSocket client
-│       ├── mistral_llm.py   # Mistral streaming client
-│       ├── cartesia_tts.py  # Cartesia WebSocket client
-│       └── chunker.py       # Sentence chunking logic
-├── requirements.txt
-├── .env.example
-├── .gitignore
-└── README.md
+VoiceAgent/
+  orchestrator/
+    __init__.py
+    main.py                            - Main orchestration loop
+    config.py                          - Configuration management
+    components/
+      __init__.py
+      faster_whisper_stt.py            - Local STT using faster-whisper
+      piper_tts.py                     - Local TTS using Piper
+      mistral_llm.py                   - Mistral streaming client
+      chunker.py                       - Sentence chunking logic
+      deepgram_stt.py                  - Legacy cloud STT (deprecated)
+      cartesia_tts.py                  - Legacy cloud TTS (deprecated)
+  static/
+    index.html                         - Web frontend
+  docs/
+    research_analysis.md               - Latency benchmarks and architecture comparison
+  tests/
+    test_chunker.py                    - Unit tests for sentence chunker
+  server.py                            - FastAPI WebSocket server
+  requirements.txt                     - Python dependencies
+  .env.example                         - Environment variable template
 ```
 
-## 🔧 Troubleshooting
+## Performance
 
-### "DEEPGRAM_API_KEY environment variable is required"
+Tested on Apple M2 Air, 16 GB RAM:
 
-Make sure you've created a `.env` file with your API keys. See Configuration section.
+| Metric | Value |
+|---|---|
+| STT latency | 595 to 1,084 ms |
+| LLM first token | 538 to 593 ms |
+| TTS first chunk | 60 to 195 ms |
+| End-to-end perceived latency | 1,094 to 1,385 ms |
+| Model load time (startup) | Approximately 2.5 seconds |
+| RAM usage (models loaded) | Approximately 850 MB |
 
-### "Rate limited" errors from Mistral
+For detailed benchmarks and the full cloud-vs-local comparison, see [docs/research_analysis.md](docs/research_analysis.md).
 
-The free tier has strict limits (~5 requests/minute). The orchestrator will automatically retry with exponential backoff. For production, upgrade to a paid tier.
+## Troubleshooting
 
 ### No audio output
 
-1. Check your system audio settings
-2. Verify Cartesia API key is correct
-3. Try `--fallback-tts` mode to test without audio
+Ensure your browser has microphone permissions enabled. Check the browser console for WebSocket connection errors. Verify the server is running on port 8000.
 
-### High latency
+### High STT latency
 
-1. Check your internet connection
-2. Reduce `MISTRAL_MAX_TOKENS` for shorter responses
-3. Lower `VAD_THRESHOLD_MS` (but may cause false triggers)
+Lower the `VAD_THRESHOLD_MS` value in `.env`. Values below 200ms may cause false triggers on background noise.
 
-## 🎨 Customization
+### Mistral rate limit errors
 
-### Change AI Persona
+The free tier has strict limits (approximately 5 requests per minute). The server will log rate limit errors. Consider upgrading to a paid tier for production use.
 
-Edit the system prompt in `.env` or `orchestrator/config.py`:
+### Model download failures
 
-```python
-system_prompt: str = (
-    "You are a [your persona here]. "
-    "Keep responses brief (max 15-20 words per sentence)."
-)
-```
+On first run, the system downloads models from HuggingFace. Ensure you have internet access. Models are cached locally after the first download.
 
-### Use Different Voice
+## Customization
 
-Change `CARTESIA_VOICE_ID` in `.env`. Browse voices at: https://cartesia.ai/voices
+### Change the AI Persona
 
-### Adjust Chunking Behavior
+Edit the `SYSTEM` prompt in `server.py`. The prompt follows a voice-native turn-taking pattern. Keep responses conversational and avoid instructing the model to use markdown or lists.
 
-Modify delimiters in `orchestrator/config.py`:
+### Use a Different Voice
 
-```python
-sentence_delimiters: List[str] = ['.', '!', '?']  # Remove ',' for longer chunks
-```
+Change `PIPER_VOICE` in `.env`. Browse available Piper voices at: https://rhasspy.github.io/piper-samples/
 
-## 📊 Performance Metrics
+### Use a Smaller or Larger Whisper Model
 
-| Metric | Target | Typical |
-|--------|--------|---------|
-| Total Latency | < 1s | 600-800ms |
-| STT Latency | < 200ms | 150ms |
-| LLM First Token | < 300ms | 200ms |
-| TTS Start | < 100ms | 50ms |
-| Interrupt Response | < 100ms | 50ms |
+Change `WHISPER_MODEL` in `.env`:
+- `tiny.en` - Fastest, lower accuracy
+- `base.en` - Balanced (default)
+- `small.en` - Best accuracy, higher resource usage
 
-## 🚧 Known Limitations
+## License
 
-1. **Mistral Free Tier**: Strict rate limits (5 req/min)
-2. **Audio Input**: Currently uses microphone; phone integration requires additional work
-3. **Context Window**: Limited conversation history (can be extended)
-4. **Error Recovery**: Network failures require manual restart
+MIT License
 
-## 🛣️ Roadmap
+## Contributing
 
-- [ ] Phone system integration (Twilio, etc.)
-- [ ] Multi-turn context management
-- [ ] Emotion detection and adaptive tone
-- [ ] Voice activity detection tuning
-- [ ] Docker deployment
-- [ ] Metrics and monitoring
-
-## 📄 License
-
-MIT License - feel free to use and modify!
-
-## 🤝 Contributing
-
-Contributions welcome! Please open an issue or PR.
-
----
-
-**Built with ❤️ for natural, low-latency AI conversations**
+Contributions are welcome. Please open an issue or pull request.
